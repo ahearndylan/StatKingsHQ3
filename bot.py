@@ -3,6 +3,8 @@ from nba_api.stats.endpoints import scoreboardv2, playbyplayv2, boxscoretraditio
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import time
+import json
+import os
 
 # ======================= #
 # TWITTER AUTHENTICATION  #
@@ -21,11 +23,9 @@ client = tweepy.Client(
     access_token_secret=access_token_secret
 )
 
-
 # ======================= #
 #     TEAM NAME MAPPING   #
 # ======================= #
-
 TEAM_NAME_MAP = {
     "ATL": "Hawks", "BOS": "Celtics", "BKN": "Nets", "CHA": "Hornets",
     "CHI": "Bulls", "CLE": "Cavaliers", "DAL": "Mavericks", "DEN": "Nuggets",
@@ -82,28 +82,23 @@ def process_4q_stats(game_id):
         player2_id = event.get("PLAYER2_ID")
         description = event.get("HOMEDESCRIPTION") or event.get("VISITORDESCRIPTION") or ""
 
-        # Scoring
-        if action_type == 1:  # Made FG
+        if action_type == 1:
             points = 2
             if "3PT" in description:
                 points = 3
             stats[player1_id]["pts"] += points
             stats[player1_id]["fgm"] += 1
             stats[player1_id]["fga"] += 1
-
-        elif action_type == 2:  # Missed FG
+        elif action_type == 2:
             if player1_id:
                 stats[player1_id]["fga"] += 1
-
-        elif action_type == 3:  # Free throws
+        elif action_type == 3:
             if "MISS" not in description and player1_id:
                 stats[player1_id]["pts"] += 1
-
-        elif action_type == 5:  # Assist
+        elif action_type == 5:
             if player2_id and player2_id in player_map:
                 stats[player2_id]["ast"] += 1
 
-        # Fill player info
         for pid in [player1_id, player2_id]:
             if pid and stats[pid]["name"] == "" and pid in player_map:
                 stats[pid]["name"], stats[pid]["team"] = player_map[pid]
@@ -140,7 +135,7 @@ def aggregate_leaders(games_stats):
     top_points = {"name": "", "team": "", "stat": 0}
     top_assists = {"name": "", "team": "", "stat": 0}
     top_eff = {"name": "", "team": "", "fg_pct": 0.0, "fga": 0}
-    
+
     for pid, p in games_stats.items():
         if p["pts"] > top_points["stat"] and p["name"]:
             top_points = {"name": p["name"], "team": p["team"], "stat": p["pts"]}
@@ -180,6 +175,53 @@ def compose_tweet(date_str, points, fg, assists, team_4q_diff):
     return tweet
 
 # ======================= #
+#   WRITE TO clutch.json  #
+# ======================= #
+
+def update_clutch_json(date_str, points, fg, assists, team_4q_diff, path="clutch.json"):
+    entry = {
+        "date": date_str,
+        "points": {
+            "player": points["name"],
+            "team": points["team"],
+            "value": points["stat"]
+        },
+        "fg": {
+            "player": fg["name"],
+            "team": fg["team"],
+            "fg_pct": fg["fg_pct"],
+            "fga": fg["fga"]
+        },
+        "assists": {
+            "player": assists["name"],
+            "team": assists["team"],
+            "value": assists["stat"]
+        },
+        "team_4q_diff": {
+            "abbr": team_4q_diff[0],
+            "value": team_4q_diff[1]
+        } if team_4q_diff else None
+    }
+
+    try:
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                data = json.load(f)
+        else:
+            data = {"nights": []}
+
+        data["nights"] = [d for d in data["nights"] if d["date"] != date_str]
+        data["nights"].insert(0, entry)
+        data["nights"] = data["nights"][:30]
+
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+
+        print(f"✅ Saved to {path}")
+    except Exception as e:
+        print("❌ Error writing clutch.json:", e)
+
+# ======================= #
 #        MAIN BOT         #
 # ======================= #
 
@@ -210,9 +252,11 @@ def run_bot():
         points, fg, assists = aggregate_leaders(combined_stats)
         team_4q_diff = get_best_4q_team(date_str)
         tweet = compose_tweet(date_str, points, fg, assists, team_4q_diff)
-        
+
         print("Tweeting:\n", tweet)
-        client.create_tweet(text=tweet) 
+        client.create_tweet(text=tweet)
+
+        update_clutch_json(date_str, points, fg, assists, team_4q_diff)
 
     except Exception as e:
         print("Error:", e)
