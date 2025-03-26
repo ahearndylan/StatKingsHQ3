@@ -155,7 +155,10 @@ def aggregate_leaders(games_stats):
     return top_points, top_eff, top_assists
 
 def compose_tweet(date_str, points, fg, assists, team_4q_diff):
-    tweet = f"""\u23f1\ufe0f Clutch Time Kings – {date_str}
+    formatted_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%m/%d/%Y")
+
+    tweet = f"""\u23f1\ufe0f Clutch Time Kings – {formatted_date}
+
 
 🚀 4Q Scoring Leader
 {points['name']} ({points['team']}): {points['stat']} PTS
