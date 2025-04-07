@@ -176,7 +176,7 @@ def compose_tweet(date_str, points, fg, assists, team_4q_diff):
 📈 Best 4Q Team
 {team_name}: +{team_4q_diff[1]}"""
 
-    tweet += "\n\n#NBA #NBAStats #StatKingsHQ"
+    tweet += "\n\n#NBA #NBAStats #CourtKingsHQ"
     return tweet
 
 # ======================= #
